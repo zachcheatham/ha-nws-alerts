@@ -1,7 +1,9 @@
 import aiohttp
 import logging
 import voluptuous as vol
+from datetime import datetime
 from datetime import timedelta
+from datetime import timezone
 from homeassistant.core import callback
 from homeassistant.const import CONF_NAME, ATTR_ATTRIBUTION, EVENT_HOMEASSISTANT_START
 from homeassistant.helpers.entity import Entity
@@ -25,7 +27,14 @@ from .const import (
 # ---------------------------------------------------------
 
 _LOGGER = logging.getLogger(__name__)
+
 MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=1)
+SEVERITY_MAP = {
+    "extreme": 4,
+    "severe": 3,
+    "moderate": 2,
+    "minor": 1
+}
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_ZONE_ID): cv.string,
@@ -56,12 +65,10 @@ class NWSAlertSensor(Entity):
         """Initialize the sensor."""
         self._name = name
         self._icon = DEFAULT_ICON
-        self._state = 0
-        self._event = None
-        self._event_id = None
-        self._message_type = None
-        self._display_desc = None
-        self._spoken_desc = None
+        self._state = "None"
+        self._alert_count = 0
+        self._alerts = {}
+        self._severity = "None"
         self._zone_id = zone_id.replace(' ', '')
 
     @property
@@ -92,11 +99,9 @@ class NWSAlertSensor(Entity):
         attrs = {}
 
         attrs[ATTR_ATTRIBUTION] = ATTRIBUTION
-        attrs['title'] = self._event
-        attrs['event_id'] = self._event_id
-        attrs['message_type'] = self._message_type
-        attrs['display_desc'] = self._display_desc
-        attrs['spoken_desc'] = self._spoken_desc
+        attrs["severity"] = self._severity
+        attrs["alert_count"] = self._alert_count
+        attrs["alerts"] = self._alerts
 
         return attrs
 
@@ -116,72 +121,12 @@ class NWSAlertSensor(Entity):
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
-        """Fetch new state data for the sensor.
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        values = await self.async_get_state()
-        self._state = values['state']
-        self._event = values['event']
-        self._event_id = values['event_id']
-        self._message_type = values['message_type']
-        self._display_desc = values['display_desc']
-        self._spoken_desc = values['spoken_desc']
 
-    async def async_get_state(self):
-        values = {
-            'state': self._state,
-            'event': self._event,
-            'event_id': self._event_id,
-            'message_type': self._message_type,
-            'display_desc': self._display_desc,
-            'spoken_desc': self._spoken_desc
-        }
-
-        headers = {'User-Agent': USER_AGENT,
-                   'Accept': 'application/ld+json'
-                   }
-
-        data = None
-        url = '%s/alerts/active/count' % API_ENDPOINT
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as r:
-                _LOGGER.debug("getting state for %s from %s" % (self._zone_id, url))
-                if r.status == 200:
-                    data = await r.json()
-        
-        if data is not None:
-            # Reset values before reassigning
-            values = {
-                'state': 0,
-                'event': None,
-                'event_id': None,
-                'message_type': None,
-                'display_desc': None,
-                'spoken_desc': None
-            }
-            if 'zones' in data:
-                for zone in self._zone_id.split(','):
-                    if zone in data['zones']:
-                        values = await self.async_get_alerts()
-                        break
-
-        return values
-
-    async def async_get_alerts(self):
-        values = {
-            'state': self._state,
-            'event': self._event,
-            'event_id': self._event_id,
-            'message_type': self._message_type,
-            'display_desc': self._display_desc,
-            'spoken_desc': self._spoken_desc
-        }
-
-        headers = {'User-Agent': USER_AGENT,
-                   'Accept': 'application/geo+json'
+        headers = {"User-Agent": USER_AGENT,
+                   "Accept": "application/geo+json"
                    }
         data = None
-        url = '%s/alerts/active?zone=%s' % (API_ENDPOINT, self._zone_id)
+        url = "%s/alerts/active?zone=%s" % (API_ENDPOINT, self._zone_id)
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as r:
                 _LOGGER.debug("getting alert for %s from %s" % (self._zone_id, url))
@@ -189,80 +134,54 @@ class NWSAlertSensor(Entity):
                     data = await r.json()
 
         if data is not None:
-            events = []
-            headlines = []
-            event_id = ''
-            message_type = ''
-            display_desc = ''
-            spoken_desc = ''
-            features = data['features']
-            for alert in features:
-                event = alert['properties']['event']
-                if 'NWSheadline' in alert['properties']['parameters']:
-                    headline = alert['properties']['parameters']['NWSheadline'][0]
-                else:
-                    headline = event
 
-                id = alert['id']
-                type = alert['properties']['messageType']
-                description = alert['properties']['description']
-                instruction = alert['properties']['instruction']
-                severity = alert['properties']['severity']
-                certainty = alert['properties']['certainty']
+            alerts = {}
+            high_severity = ""
+            high_severity_value = 0
+            promient_alert = ""
 
-                #if event in events:
-                #    continue
+            for feature in data["features"]:
 
-                events.append(event)
-                headlines.append(headline)
+                alert_type = feature["properties"]["event"]
+                sent_date = datetime.fromisoformat(feature["properties"]["sent"])
+                effective_date = datetime.fromisoformat(
+                    feature["properties"]["effective"])
+                expiration_date = datetime.fromisoformat(
+                    feature["properties"]["expires"])
 
-                if display_desc != '':
-                    display_desc += '\n\n-\n\n'
+                if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
+                    if not alert_type in alerts or alerts[alert_type]["effective"] < effective_date:
+                        severity = feature["properties"]["severity"]
+                        severity_value = severity.lower() in SEVERITY_MAP and SEVERITY_MAP[severity.lower()] or 0
 
-                display_desc += '\n>\nHeadline: %s\nMessage Type: %s\nSeverity: %s\nCertainty: %s\nDescription: %s\nInstruction: %s' % (headline, type, severity, certainty, description, instruction)
-                
-                if event_id != '':
-                    event_id += '-'
-					
-                event_id += id
-                
-                message_type += type
+                        _LOGGER.debug(severity_value)
 
-            if headlines:
-                num_headlines = len(headlines)
-                i = 0
-                for headline in headlines:
-                    i += 1
-                    if spoken_desc != '':
-                        if i == num_headlines:
-                            spoken_desc += '\n\n-\n\n'
-                        else:
-                            spoken_desc += '\n\n-\n\n'
+                        if severity_value > high_severity_value:
+                            high_severity_value = severity_value
+                            high_severity = severity
+                            promient_alert = alert_type
 
-                    spoken_desc += headline
+                        alerts[alert_type] = {
+                            "id": feature["properties"]["id"],
+                            "type": feature["properties"]["@type"],
+                            "areas": feature["properties"]["areaDesc"].split(";"),
+                            "messageType": feature["properties"]["messageType"],
+                            "severity": severity,
+                            "event": alert_type,
+                            "sent": sent_date,
+                            "effective": effective_date,
+                            "expires": expiration_date,
+                        }
 
-            if len(events) > 0:
-                event_str = ''
-                for item in events:
-                    if event_str != '':
-                        event_str += ' - '
-                    event_str += item
+            if len(alerts) > 0:
+                self._state = promient_alert
+                self._severity = high_severity
+                self._alert_count = len(alerts)
+                self._alerts = alerts
+            
+                return
 
-                values['state'] = len(events)
-                values['event'] = event_str
-                values['event_id'] = event_id
-                values['message_type'] = message_type
-                values['display_desc'] = display_desc
-                values['spoken_desc'] = spoken_desc
-            else:
-                values = {
-                    'state': 0,
-                    'event': None,
-                    'event_id': None,
-                    'message_type': None,
-                    'display_desc': None,
-                    'spoken_desc': None
-                }
-
-        return values
-
+        self._state = "None"
+        self._severity = "None"
+        self._alert_count = 0
+        self._alerts = {}
