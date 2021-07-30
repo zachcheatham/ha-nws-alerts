@@ -3,8 +3,7 @@ import logging
 from homeassistant import config_entries
 from .const import (
     DOMAIN,
-    VERSION,
-    ISSUE_URL,
+    VERSION
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -15,10 +14,6 @@ async def async_setup(hass, config_entry):
     if config_entry.get(DOMAIN) is None:
         # We get here if the integration is set up using config flow
         return True
-
-    # Print startup message
-    _LOGGER.info('Version %s is starting, if you have any issues please report'
-                 ' them here: %s', VERSION, ISSUE_URL)
 
     hass.async_create_task(
         hass.config_entries.flow.async_init(
@@ -31,9 +26,6 @@ async def async_setup(hass, config_entry):
 
 async def async_setup_entry(hass, config_entry):
     """Load the saved entities."""
-    # Print startup message
-    _LOGGER.info('Version %s is starting, if you have any issues please report'
-                 ' them here: %s', VERSION, ISSUE_URL)
     config_entry.options = config_entry.data
     config_entry.add_update_listener(update_listener)
     hass.async_create_task(
