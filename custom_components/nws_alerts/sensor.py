@@ -67,6 +67,7 @@ class NWSAlertSensor(Entity):
         self._icon = DEFAULT_ICON
         self._state = "None"
         self._alert_count = 0
+        self._alert_active = False
         self._alerts = {}
         self._severity = "None"
         self._zone_id = zone_id.replace(' ', '')
@@ -94,7 +95,7 @@ class NWSAlertSensor(Entity):
         return self._state
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state message."""
         attrs = {}
 
@@ -102,6 +103,7 @@ class NWSAlertSensor(Entity):
         attrs["severity"] = self._severity
         attrs["alert_count"] = self._alert_count
         attrs["alerts"] = self._alerts
+        attrs["alert_active"] = self._alert_active
 
         return attrs
 
@@ -133,14 +135,16 @@ class NWSAlertSensor(Entity):
                 if r.status == 200:
                     data = await r.json()
 
+        alerts = {}
+        high_severity = "None"
+        high_severity_value = 0
+        promient_alert = "None"
+        alert_active = False
+
         if data is not None:
-
-            alerts = {}
-            high_severity = ""
-            high_severity_value = 0
-            promient_alert = ""
-
             for feature in data["features"]:
+
+                _LOGGER.debug(feature)
 
                 alert_type = feature["properties"]["event"]
                 sent_date = datetime.fromisoformat(feature["properties"]["sent"])
@@ -148,13 +152,15 @@ class NWSAlertSensor(Entity):
                     feature["properties"]["effective"])
                 expiration_date = datetime.fromisoformat(
                     feature["properties"]["expires"])
+                onset = datetime.fromisoformat(
+                    feature["properties"]["onset"])
+                ends = datetime.fromisoformat(
+                    feature["properties"]["ends"])
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
-                    if not alert_type in alerts or alerts[alert_type]["effective"] < effective_date:
+                    if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and (ends - onset) > alerts[alert_type]["ends"] - alerts[alert_type]["onset"]):
                         severity = feature["properties"]["severity"]
-                        severity_value = severity.lower() in SEVERITY_MAP and SEVERITY_MAP[severity.lower()] or 0
-
-                        _LOGGER.debug(severity_value)
+                        severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
 
                         if severity_value > high_severity_value:
                             high_severity_value = severity_value
@@ -170,18 +176,17 @@ class NWSAlertSensor(Entity):
                             "event": alert_type,
                             "sent": sent_date,
                             "effective": effective_date,
+                            "onset": onset,
+                            "ends": ends,
+                            "active": onset < datetime.now(timezone.utc) and ends > datetime.now(timezone.utc),
                             "expires": expiration_date,
                         }
 
-            if len(alerts) > 0:
-                self._state = promient_alert
-                self._severity = high_severity
-                self._alert_count = len(alerts)
-                self._alerts = alerts
-            
-                return
+                        if alerts[alert_type]["active"]:
+                            alert_active = True
 
-        self._state = "None"
-        self._severity = "None"
-        self._alert_count = 0
-        self._alerts = {}
+        self._state = promient_alert
+        self._severity = high_severity
+        self._alert_count = len(alerts)
+        self._alerts = alerts
+        self._alert_active = alert_active
