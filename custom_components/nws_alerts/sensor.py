@@ -161,6 +161,12 @@ class NWSAlertSensor(Entity):
         prominent_ends = None
         alert_active = False
 
+        alerts = {}
+        high_severity = "None"
+        high_severity_value = 0
+        promient_alert = "None"
+        alert_active = False
+
         if data is not None:
             for feature in data["features"]:
 
