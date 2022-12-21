@@ -101,6 +101,7 @@ class NWSAlertSensor(Entity):
 
         attrs[ATTR_ATTRIBUTION] = ATTRIBUTION
         attrs["severity"] = self._severity
+        attrs["ends"] = self._ends
         attrs["alert_count"] = self._alert_count
         attrs["alerts"] = self._alerts
         attrs["alert_active"] = self._alert_active
@@ -134,11 +135,14 @@ class NWSAlertSensor(Entity):
                 _LOGGER.debug("getting alert for %s from %s" % (self._zone_id, url))
                 if r.status == 200:
                     data = await r.json()
+                else:
+                    _LOGGER.error("Received %d from API %s for zone %s" % (r.status, url, self._zone_id))
 
         alerts = {}
-        high_severity = "None"
+        high_severity = None
         high_severity_value = 0
-        promient_alert = "None"
+        promient_alert = None
+        prominent_ends = None
         alert_active = False
 
         if data is not None:
@@ -166,6 +170,7 @@ class NWSAlertSensor(Entity):
                             high_severity_value = severity_value
                             high_severity = severity
                             promient_alert = alert_type
+                            prominent_ends = ends
 
                         alerts[alert_type] = {
                             "id": feature["properties"]["id"],
@@ -185,8 +190,10 @@ class NWSAlertSensor(Entity):
                         if alerts[alert_type]["active"]:
                             alert_active = True
 
-        self._state = promient_alert
-        self._severity = high_severity
-        self._alert_count = len(alerts)
-        self._alerts = alerts
-        self._alert_active = alert_active
+            self._state = promient_alert
+            self._ends = prominent_ends
+            self._severity = high_severity
+            self._alert_count = len(alerts)
+            self._alerts = alerts
+            self._alert_active = alert_active
+            
