@@ -36,6 +36,20 @@ SEVERITY_MAP = {
     "minor": 1
 }
 
+COLOR_MAP = {
+    "Dense Fog Advisory": [255, 190, 207],
+    "Winter Weather Advisory": [199, 36, 255],
+    "Winter Storm Warning": [255, 36, 199],
+    "Wind Chill Advisory": [8, 141, 214],
+    "Wind Chill Warning": [176, 196, 222],
+    "Heat Advisory": [255, 99, 27],
+    "Tornado Warning": [255, 0, 0],
+    "Tornado Watch": [255, 190, 0],
+    "Severe Thunderstorm Warning": [255, 160, 0],
+    "Severe Thunderstorm Watch": [255, 149, 0],
+    "Freeze Warning": [199, 36, 255],
+}
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_ZONE_ID): cv.string,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
@@ -70,6 +84,7 @@ class NWSAlertSensor(Entity):
         self._alert_active = False
         self._alerts = {}
         self._severity = "None"
+        self._color = None
         self._zone_id = zone_id.replace(' ', '')
 
     @property
@@ -105,6 +120,7 @@ class NWSAlertSensor(Entity):
         attrs["alert_count"] = self._alert_count
         attrs["alerts"] = self._alerts
         attrs["alert_active"] = self._alert_active
+        attrs["color"] = self._color
 
         return attrs
 
@@ -196,4 +212,5 @@ class NWSAlertSensor(Entity):
             self._alert_count = len(alerts)
             self._alerts = alerts
             self._alert_active = alert_active
+            self._color = (alert_active and promient_alert in COLOR_MAP) and COLOR_MAP[promient_alert] or None
             
