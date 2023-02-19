@@ -1,3 +1,4 @@
+from sqlite3 import ProgrammingError
 import aiohttp
 import logging
 import voluptuous as vol
@@ -48,6 +49,16 @@ COLOR_MAP = {
     "Severe Thunderstorm Warning": [255, 160, 0],
     "Severe Thunderstorm Watch": [255, 149, 0],
     "Freeze Warning": [199, 36, 255],
+}
+
+SEVERITY_MODIFIERS = {
+    "Flood Watch": -1,
+    "Severe Thunderstorm Watch": -1
+}
+
+SUB_SEVERITY_MAP = {
+    "Severe Thunderstorm Watch": 1,
+    "Flood Watch": -1
 }
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -188,11 +199,22 @@ class NWSAlertSensor(Entity):
                         severity = feature["properties"]["severity"]
                         severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
 
+                        if severity_value != 0 and alert_type in SEVERITY_MODIFIERS:
+                            severity_value += SEVERITY_MODIFIERS[alert_type]
+
                         if severity_value > high_severity_value:
                             high_severity_value = severity_value
                             high_severity = severity
                             promient_alert = alert_type
                             prominent_ends = ends
+                        elif severity_value == high_severity_value:
+                            sub_severity = (alert_type in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[alert_type] or 0)
+                            sub_high_severity = (promient_alert in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[promient_alert] or 0)
+                            if sub_severity > sub_high_severity:
+                                high_severity_value = severity_value
+                                high_severity = severity
+                                promient_alert = alert_type
+                                prominent_ends = ends
 
                         alerts[alert_type] = {
                             "id": feature["properties"]["id"],
