@@ -36,20 +36,6 @@ SEVERITY_MAP = {
     "minor": 1
 }
 
-COLOR_MAP = {
-    "Dense Fog Advisory": [255, 190, 207],
-    "Winter Weather Advisory": [199, 36, 255],
-    "Winter Storm Warning": [255, 36, 199],
-    "Wind Chill Advisory": [8, 141, 214],
-    "Wind Chill Warning": [176, 196, 222],
-    "Heat Advisory": [255, 99, 27],
-    "Tornado Warning": [255, 0, 0],
-    "Tornado Watch": [255, 190, 0],
-    "Severe Thunderstorm Warning": [255, 160, 0],
-    "Severe Thunderstorm Watch": [255, 149, 0],
-    "Freeze Warning": [199, 36, 255],
-}
-
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_ZONE_ID): cv.string,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
@@ -83,8 +69,8 @@ class NWSAlertSensor(Entity):
         self._alert_count = 0
         self._alert_active = False
         self._alerts = {}
-        self._severity = "None"
-        self._color = None
+        self._ends = None
+        self._severity = None
         self._zone_id = zone_id.replace(' ', '')
 
     @property
@@ -120,7 +106,6 @@ class NWSAlertSensor(Entity):
         attrs["alert_count"] = self._alert_count
         attrs["alerts"] = self._alerts
         attrs["alert_active"] = self._alert_active
-        attrs["color"] = self._color
 
         return attrs
 
@@ -129,14 +114,14 @@ class NWSAlertSensor(Entity):
         _LOGGER.debug("Registering: %s...", self.entity_id)
 
         @callback
-        def sensor_startup(event):        
+        def sensor_startup(event):
             """Update sensor on startup."""
 
             self.async_schedule_update_ha_state(True)
 
         self.hass.bus.async_listen_once(
             EVENT_HOMEASSISTANT_START, sensor_startup
-        )        
+        )
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
@@ -148,16 +133,18 @@ class NWSAlertSensor(Entity):
         url = "%s/alerts/active?zone=%s" % (API_ENDPOINT, self._zone_id)
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as r:
-                _LOGGER.debug("getting alert for %s from %s" % (self._zone_id, url))
+                _LOGGER.debug("getting alert for %s from %s" %
+                              (self._zone_id, url))
                 if r.status == 200:
                     data = await r.json()
                 else:
-                    _LOGGER.error("Received %d from API %s for zone %s" % (r.status, url, self._zone_id))
+                    _LOGGER.error("Received %d from API %s for zone %s" %
+                                  (r.status, url, self._zone_id))
 
         alerts = {}
-        high_severity = None
+        high_severity = "None"
         high_severity_value = 0
-        promient_alert = None
+        promient_alert = "None"
         prominent_ends = None
         alert_active = False
 
@@ -167,20 +154,22 @@ class NWSAlertSensor(Entity):
                 _LOGGER.debug(feature)
 
                 alert_type = feature["properties"]["event"]
-                sent_date = datetime.fromisoformat(feature["properties"]["sent"])
+                sent_date = datetime.fromisoformat(
+                    feature["properties"]["sent"])
                 effective_date = datetime.fromisoformat(
                     feature["properties"]["effective"])
                 expiration_date = datetime.fromisoformat(
                     feature["properties"]["expires"])
                 onset = datetime.fromisoformat(
                     feature["properties"]["onset"])
-                ends = datetime.fromisoformat(
-                    feature["properties"]["ends"])
+                ends = feature["properties"]["ends"] and datetime.fromisoformat(
+                    feature["properties"]["ends"]) or expiration_date
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
                     if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and (ends - onset) > alerts[alert_type]["ends"] - alerts[alert_type]["onset"]):
                         severity = feature["properties"]["severity"]
-                        severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
+                        severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(
+                            timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
 
                         if severity_value > high_severity_value:
                             high_severity_value = severity_value
@@ -212,5 +201,3 @@ class NWSAlertSensor(Entity):
             self._alert_count = len(alerts)
             self._alerts = alerts
             self._alert_active = alert_active
-            self._color = (alert_active and promient_alert in COLOR_MAP) and COLOR_MAP[promient_alert] or None
-            

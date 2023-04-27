@@ -5,7 +5,6 @@ DEFAULT_NAME = "NWS Alerts"
 CONF_ZONE_ID = "zone_id"
 ZONE_ID = ""
 VERSION = "1.8.1-S"
-DOMAIN = "nws_alerts"
+DOMAIN = "nws_alerts_simple"
 PLATFORM = "sensor"
 ATTRIBUTION = "Data provided by Weather.gov"
-
