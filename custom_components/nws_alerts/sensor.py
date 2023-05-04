@@ -1,4 +1,3 @@
-from sqlite3 import ProgrammingError
 import aiohttp
 import logging
 import voluptuous as vol
@@ -94,7 +93,8 @@ class NWSAlertSensor(Entity):
         self._alert_count = 0
         self._alert_active = False
         self._alerts = {}
-        self._severity = "None"
+        self._ends = None
+        self._severity = None
         self._color = None
         self._zone_id = zone_id.replace(' ', '')
 
@@ -140,14 +140,14 @@ class NWSAlertSensor(Entity):
         _LOGGER.debug("Registering: %s...", self.entity_id)
 
         @callback
-        def sensor_startup(event):        
+        def sensor_startup(event):
             """Update sensor on startup."""
 
             self.async_schedule_update_ha_state(True)
 
         self.hass.bus.async_listen_once(
             EVENT_HOMEASSISTANT_START, sensor_startup
-        )        
+        )
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
@@ -159,23 +159,19 @@ class NWSAlertSensor(Entity):
         url = "%s/alerts/active?zone=%s" % (API_ENDPOINT, self._zone_id)
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as r:
-                _LOGGER.debug("getting alert for %s from %s" % (self._zone_id, url))
+                _LOGGER.debug("getting alert for %s from %s" %
+                              (self._zone_id, url))
                 if r.status == 200:
                     data = await r.json()
                 else:
-                    _LOGGER.error("Received %d from API %s for zone %s" % (r.status, url, self._zone_id))
-
-        alerts = {}
-        high_severity = None
-        high_severity_value = 0
-        promient_alert = None
-        prominent_ends = None
-        alert_active = False
+                    _LOGGER.error("Received %d from API %s for zone %s" %
+                                  (r.status, url, self._zone_id))
 
         alerts = {}
         high_severity = "None"
         high_severity_value = 0
-        promient_alert = "None"
+        prominent_alert = "None"
+        prominent_ends = None
         alert_active = False
 
         if data is not None:
@@ -184,20 +180,22 @@ class NWSAlertSensor(Entity):
                 _LOGGER.debug(feature)
 
                 alert_type = feature["properties"]["event"]
-                sent_date = datetime.fromisoformat(feature["properties"]["sent"])
+                sent_date = datetime.fromisoformat(
+                    feature["properties"]["sent"])
                 effective_date = datetime.fromisoformat(
                     feature["properties"]["effective"])
                 expiration_date = datetime.fromisoformat(
                     feature["properties"]["expires"])
                 onset = datetime.fromisoformat(
                     feature["properties"]["onset"])
-                ends = datetime.fromisoformat(
-                    feature["properties"]["ends"])
+                ends = feature["properties"]["ends"] and datetime.fromisoformat(
+                    feature["properties"]["ends"]) or expiration_date
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
                     if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and (ends - onset) > alerts[alert_type]["ends"] - alerts[alert_type]["onset"]):
                         severity = feature["properties"]["severity"]
-                        severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
+                        severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(
+                            timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
 
                         if severity_value != 0 and alert_type in SEVERITY_MODIFIERS:
                             severity_value += SEVERITY_MODIFIERS[alert_type]
@@ -205,15 +203,15 @@ class NWSAlertSensor(Entity):
                         if severity_value > high_severity_value:
                             high_severity_value = severity_value
                             high_severity = severity
-                            promient_alert = alert_type
+                            prominent_alert = alert_type
                             prominent_ends = ends
                         elif severity_value == high_severity_value:
                             sub_severity = (alert_type in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[alert_type] or 0)
-                            sub_high_severity = (promient_alert in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[promient_alert] or 0)
+                            sub_high_severity = (prominent_alert in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[prominent_alert] or 0)
                             if sub_severity > sub_high_severity:
                                 high_severity_value = severity_value
                                 high_severity = severity
-                                promient_alert = alert_type
+                                prominent_alert = alert_type
                                 prominent_ends = ends
 
                         alerts[alert_type] = {
@@ -240,5 +238,5 @@ class NWSAlertSensor(Entity):
             self._alert_count = len(alerts)
             self._alerts = alerts
             self._alert_active = alert_active
-            self._color = (alert_active and promient_alert in COLOR_MAP) and COLOR_MAP[promient_alert] or None
+            self._color = (alert_active and prominent_alert in COLOR_MAP) and COLOR_MAP[prominent_alert] or None
             
