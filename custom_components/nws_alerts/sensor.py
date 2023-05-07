@@ -51,12 +51,14 @@ COLOR_MAP = {
 }
 
 SEVERITY_MODIFIERS = {
-    "Flood Watch": -1,
+    "Flood Watch": -2,
+    "Flood Warning": -2,
     "Severe Thunderstorm Watch": -1
 }
 
 SUB_SEVERITY_MAP = {
     "Severe Thunderstorm Watch": 1,
+    "Flood Warning": -1,
     "Flood Watch": -1
 }
 
