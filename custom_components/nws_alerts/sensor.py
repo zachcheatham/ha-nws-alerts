@@ -189,10 +189,10 @@ class NWSAlertSensor(Entity):
                 onset = datetime.fromisoformat(
                     feature["properties"]["onset"])
                 ends = feature["properties"]["ends"] and datetime.fromisoformat(
-                    feature["properties"]["ends"]) or expiration_date
+                    feature["properties"]["ends"]) or datetime.fromisoformat("2099-12-31T23:59:59-00:00")
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
-                    if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and (ends - onset) > alerts[alert_type]["ends"] - alerts[alert_type]["onset"]):
+                    if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and ends < alerts[alert_type]["ends"]):
                         severity = feature["properties"]["severity"]
                         severity_value = (onset < datetime.now(timezone.utc) and ends > datetime.now(
                             timezone.utc) and severity.lower() in SEVERITY_MAP) and SEVERITY_MAP[severity.lower()] or 0
@@ -206,8 +206,10 @@ class NWSAlertSensor(Entity):
                             prominent_alert = alert_type
                             prominent_ends = ends
                         elif severity_value == high_severity_value:
-                            sub_severity = (alert_type in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[alert_type] or 0)
-                            sub_high_severity = (prominent_alert in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[prominent_alert] or 0)
+                            sub_severity = (
+                                alert_type in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[alert_type] or 0)
+                            sub_high_severity = (
+                                prominent_alert in SUB_SEVERITY_MAP and SUB_SEVERITY_MAP[prominent_alert] or 0)
                             if sub_severity > sub_high_severity:
                                 high_severity_value = severity_value
                                 high_severity = severity
@@ -232,11 +234,11 @@ class NWSAlertSensor(Entity):
                         if alerts[alert_type]["active"]:
                             alert_active = True
 
-            self._state = promient_alert
+            self._state = prominent_alert
             self._ends = prominent_ends
             self._severity = high_severity
             self._alert_count = len(alerts)
             self._alerts = alerts
             self._alert_active = alert_active
-            self._color = (alert_active and prominent_alert in COLOR_MAP) and COLOR_MAP[prominent_alert] or None
-            
+            self._color = (
+                alert_active and prominent_alert in COLOR_MAP) and COLOR_MAP[prominent_alert] or None
