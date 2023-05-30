@@ -171,7 +171,7 @@ class NWSAlertSensor(Entity):
 
         alerts = {}
         high_severity = "None"
-        high_severity_value = 0
+        high_severity_value = -1
         prominent_alert = "None"
         prominent_ends = None
         alert_active = False
@@ -190,8 +190,13 @@ class NWSAlertSensor(Entity):
                     feature["properties"]["expires"])
                 onset = datetime.fromisoformat(
                     feature["properties"]["onset"])
-                ends = feature["properties"]["ends"] and datetime.fromisoformat(
-                    feature["properties"]["ends"]) or datetime.fromisoformat("2099-12-31T23:59:59-00:00")
+
+                if feature["properties"]["ends"]:
+                    ends = datetime.fromisoformat(feature["properties"]["ends"])
+                elif expiration_date > effective_date:
+                    ends = expiration_date
+                else:
+                    ends = datetime.fromisoformat("2099-12-31T23:59:59-00:00")
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
                     if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and ends < alerts[alert_type]["ends"]):
