@@ -202,7 +202,10 @@ class NWSAlertSensor(Entity):
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
                     if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and ends < alerts[alert_type]["ends"]):
 
-                        coordinates = feature.get("geometry", {}).get("coordinates")
+                        coordinates = None
+                        geometry = feature.get("geometry")
+                        if geometry:
+                            coordinates = geometry.get("coordinates")
 
                         if coordinates is None or is_point_in_any_polygon(self._location, coordinates):
                             severity = feature["properties"]["severity"]
