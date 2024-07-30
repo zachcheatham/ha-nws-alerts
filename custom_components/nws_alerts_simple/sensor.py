@@ -197,7 +197,7 @@ class NWSAlertSensor(Entity):
                 onset = datetime.fromisoformat(
                     feature["properties"]["onset"])
                 ends = feature["properties"]["ends"] and datetime.fromisoformat(
-                    feature["properties"]["ends"]) or datetime.fromisoformat("2099-12-31T23:59:59-00:00")
+                    feature["properties"]["ends"]) or expiration_date #datetime.fromisoformat("2099-12-31T23:59:59-00:00")
 
                 if effective_date < datetime.now(timezone.utc) and expiration_date > datetime.now(timezone.utc):
                     if alert_type not in alerts or onset < alerts[alert_type]["onset"] or (onset == alerts[alert_type]["onset"] and ends < alerts[alert_type]["ends"]):
@@ -276,7 +276,7 @@ def is_point_in_polygon(point, polygon):
 
     p1x, p1y = polygon[0]
     for i in range(n + 1):
-        p2x, p2y = polygon[i % n]
+        p2y, p2x = polygon[i % n]
         if y > min(p1y, p2y):
             if y <= max(p1y, p2y):
                 if x <= max(p1x, p2x):
