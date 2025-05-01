@@ -54,9 +54,11 @@ SEVERITY_MAP = {
 SEVERITY_MODIFIERS = {
     "Flood Watch": -2,
     "Flood Warning": -2,
-    "Severe Thunderstorm Watch": -1
+    "Severe Thunderstorm Watch": -1,
+    "Tornado Watch": -1
 }
 
+# Used to resolve ties
 SUB_SEVERITY_MAP = {
     "Severe Thunderstorm Watch": 1,
     "Flood Warning": -1,
