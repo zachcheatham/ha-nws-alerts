@@ -1,13 +1,12 @@
 """ NWS Alerts """
 import logging
 from homeassistant import config_entries
-from .const import (
-    DOMAIN,
-    VERSION
-)
+from homeassistant.components.sensor import DOMAIN as DOMAIN_SENSOR
+from homeassistant.helpers.discovery import async_load_platform
+from .const import (DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
-
+PLATFORMS = [DOMAIN_SENSOR]
 
 async def async_setup(hass, config_entry):
     """Set up this component using YAML."""
@@ -28,10 +27,9 @@ async def async_setup_entry(hass, config_entry):
     """Load the saved entities."""
     hass.config_entries.async_update_entry(config_entry, options=config_entry.data)
     config_entry.add_update_listener(update_listener)
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, "sensor")
-    )
 
+    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    
     return True
 
 
